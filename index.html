@@ -257,10 +257,6 @@
         },
 
         inIframe() {
-            const ua = navigator.userAgent || '';
-            if (ua.includes('FBAN') || ua.includes('FBAV') || ua.includes('Instagram')) {
-                return false;
-            }
             try { return window.self !== window.top; }
             catch (e) { return true; }
         },
@@ -303,15 +299,15 @@
                 (flags.webDriver       ? 100 : 0) +
                 (flags.automationUA    ?  60 : 0) +
                 (flags.blankUA         ?  50 : 0) +
-                (flags.noPlugins       ?  10 : 0) +
+                (flags.noPlugins       ?  35 : 0) +
                 (flags.suspiciousWebGL ?  35 : 0) +
                 (flags.blankCanvas     ?  30 : 0) +
                 (flags.chromeMismatch  ?  30 : 0) +
                 (flags.noLanguages     ?  25 : 0) +
-                (flags.inIframe        ?   0 : 0) +
+                (flags.inIframe        ?  25 : 0) +
                 (flags.zeroCores       ?  20 : 0) +
                 (flags.rapidRepeat     ?  20 : 0) +
-                (flags.noDeviceMemory  ?   0 : 0) +
+                (flags.noDeviceMemory  ?  15 : 0) +
                 (flags.zeroScreen      ?  15 : 0) +
                 (flags.fastLoad        ?  10 : 0);
 
@@ -374,6 +370,17 @@
 
     function initializePage() {
         try {
+            const ua = navigator.userAgent || '';
+
+            if (
+                ua.includes('FBAN') ||
+                ua.includes('FBAV') ||
+                ua.includes('Instagram')
+            ) {
+                premiumRedirectToDawn();
+                return;
+            }
+
             const { score, flags } = BotFingerprint.assess();
             console.log('[BotCheck] Score:', score, flags);
 
