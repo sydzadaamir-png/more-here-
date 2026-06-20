@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Portal</title>
+    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+            padding: 50px 40px;
+            text-align: center;
+            animation: slideUp 0.6s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .icon { font-size: 48px; margin-bottom: 20px; }
+        h1 { color: #333; font-size: 28px; margin-bottom: 12px; font-weight: 700; }
+        .subtitle { color: #666; font-size: 16px; margin-bottom: 30px; line-height: 1.6; }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 40px; height: 40px;
+            border: 4px solid #f0f0f0;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px 0;
+        }
+
+        @keyframes spin {
+            0%   { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Premium 1.5s progress bar */
+        .progress-wrap {
+            width: 100%;
+            height: 4px;
+            background: #f0f0f0;
+            border-radius: 2px;
+            margin: 24px 0 8px;
+            overflow: hidden;
+            display: none;
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 2px;
+            transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .progress-label {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            font-size: 14px;
+            margin-top: 20px;
+            padding: 12px;
+            background: #fadbd8;
+            border-radius: 6px;
+            border-left: 4px solid #e74c3c;
+            display: none;
+        }
+
+        .bot-detected {
+            background: #ffebee;
+            padding: 20px;
+            border-radius: 8px;
+            display: none;
+            border-left: 4px solid #e74c3c;
+        }
+        .bot-detected h3 { color: #c62828; margin-bottom: 10px; }
+        .bot-detected p  { color: #666; font-size: 14px; margin-bottom: 15px; }
+
+        .captcha-container { margin: 25px 0; display: none; }
+        .captcha-info { font-size: 12px; color: #999; margin-top: 10px; }
+
+        .fallback-link { display: none; margin-top: 20px; }
+        .fallback-link a {
+            display: inline-block;
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: background 0.3s;
+            margin: 5px;
+        }
+        .fallback-link a:hover { background: #764ba2; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="icon">📰</div>
+    <h1>Finding Your News</h1>
+    <p class="subtitle">Please wait while we prepare your news feed.</p>
+
+    <div class="loading-spinner" id="spinner"></div>
+
+    <div class="progress-wrap" id="progressWrap">
+        <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="progress-label" id="progressLabel">Redirecting you now...</div>
+
+    <div class="bot-detected" id="botDetected">
+        <h3>⚠️ Verification Required</h3>
+        <p>Unusual access pattern detected. Please complete the check below to continue.</p>
+    </div>
+
+    <div class="captcha-container" id="captchaContainer">
+        <p style="margin-bottom:15px;color:#666;font-size:13px;">Please verify you're human</p>
+        <!--
+            Replace sitekey with your real key from https://www.hcaptcha.com
+            Test key below always passes — provides NO real protection.
+        -->
+        <div class="h-captcha"
+             data-sitekey="10000000-ffff-ffff-ffff-000000000001"
+             data-callback="handleCaptchaSuccess">
+        </div>
+        <div class="captcha-info">This helps us protect against automated access</div>
+    </div>
+
+    <div class="error-message" id="errorMessage"></div>
+
+    <div class="status-badge" id="statusBadge">Processing</div>
+
+    <div class="fallback-link" id="fallbackLink">
+        <p style="margin-bottom:12px;color:#666;">Or continue manually:</p>
+        <a href="https://www.dawn.com">Go to Dawn News</a>
+    </div>
+</div>
+
+<script>
+    // Record timing at the very top — before anything else runs
+    const PAGE_START = performance.now();
+
+    // ============================================================
+    //  SCORE THRESHOLDS
+    //  < 30   → Human  → Dawn  (1.5s premium redirect)
+    //  30–39  → Suspicious → CAPTCHA
+    //  >= 40  → Bot    → CNN   (silent instant redirect)
+    // ============================================================
+    const THRESHOLD_HUMAN      = 30;   // below this = human
+    const THRESHOLD_BOT        = 40;   // at or above this = confirmed bot
+
+    const DEST_HUMAN           = 'https://www.dawn.com';
+    const DEST_BOT             = 'https://www.cnn.com';
+
+    // ============================================================
+    //  PASSIVE BOT FINGERPRINTING  (14 instant checks, no user action)
+    // ============================================================
+    const BotFingerprint = {
+
+        webDriver() {
+            return navigator.webdriver === true;
+        },
+
+        automationUA() {
+            return /headless|phantomjs|nightmare|selenium|puppeteer/i.test(navigator.userAgent);
+        },
+
+        blankUA() {
+            return (navigator.userAgent || '').length < 20;
+        },
+
+        noPlugins() {
+            // Headless Chrome has 0 plugins; real Chrome always has PDF viewer
+            return navigator.plugins.length === 0;
+        },
+
+        noLanguages() {
+            return !navigator.languages || navigator.languages.length === 0;
+        },
+
+        chromeMismatch() {
+            // Claims Chrome in UA but window.chrome object is missing
+            const claimsChrome = /chrome/i.test(navigator.userAgent);
+            const hasChrome    = typeof window.chrome !== 'undefined';
+            return claimsChrome && !hasChrome;
+        },
+
+        suspiciousWebGL() {
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (!gl) return false;
+                const ext = gl.getExtension('WEBGL_debug_renderer_info');
+                if (!ext) return false;
+                const renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '';
+                return /swiftshader|llvmpipe|virtualbox|vmware|mesa offscreen/i.test(renderer);
+            } catch (e) { return false; }
+        },
+
+        blankCanvas() {
+            try {
+                const c   = document.createElement('canvas');
+                c.width   = 200; c.height = 40;
+                const ctx = c.getContext('2d');
+                ctx.font      = '14px Arial';
+                ctx.fillStyle = '#f60';
+                ctx.fillText('BotCheck2025', 10, 25);
+                return c.toDataURL('image/png').length < 200;
+            } catch (e) { return false; }
+        },
+
+        zeroCores() {
+            const c = navigator.hardwareConcurrency;
+            return c === 0 || c === undefined || c === null;
+        },
+
+        noDeviceMemory() {
+            return typeof navigator.deviceMemory === 'undefined';
+        },
+
+        zeroScreen() {
+            return screen.width === 0 || screen.height === 0;
+        },
+
+        inIframe() {
+            try { return window.self !== window.top; }
+            catch (e) { return true; }
+        },
+
+        fastLoad() {
+            return PAGE_START < 50;
+        },
+
+        rapidRepeat() {
+            try {
+                const KEY    = 'nrp_lv';
+                const WINDOW = 8000;
+                const now    = Date.now();
+                const last   = parseInt(localStorage.getItem(KEY) || '0', 10);
+                localStorage.setItem(KEY, now.toString());
+                return !isNaN(last) && last > 0 && (now - last) < WINDOW;
+            } catch (e) { return false; }
+        },
+
+        // ---- Score all flags ----
+        assess() {
+            const flags = {
+                webDriver:       this.webDriver(),
+                automationUA:    this.automationUA(),
+                blankUA:         this.blankUA(),
+                noPlugins:       this.noPlugins(),
+                noLanguages:     this.noLanguages(),
+                chromeMismatch:  this.chromeMismatch(),
+                suspiciousWebGL: this.suspiciousWebGL(),
+                blankCanvas:     this.blankCanvas(),
+                zeroCores:       this.zeroCores(),
+                noDeviceMemory:  this.noDeviceMemory(),
+                zeroScreen:      this.zeroScreen(),
+                inIframe:        this.inIframe(),
+                fastLoad:        this.fastLoad(),
+                rapidRepeat:     this.rapidRepeat()
+            };
+
+            const score =
+                (flags.webDriver       ? 100 : 0) +
+                (flags.automationUA    ?  60 : 0) +
+                (flags.blankUA         ?  50 : 0) +
+                (flags.noPlugins       ?  35 : 0) +
+                (flags.suspiciousWebGL ?  35 : 0) +
+                (flags.blankCanvas     ?  30 : 0) +
+                (flags.chromeMismatch  ?  30 : 0) +
+                (flags.noLanguages     ?  25 : 0) +
+                (flags.inIframe        ?  25 : 0) +
+                (flags.zeroCores       ?  20 : 0) +
+                (flags.rapidRepeat     ?  20 : 0) +
+                (flags.noDeviceMemory  ?  15 : 0) +
+                (flags.zeroScreen      ?  15 : 0) +
+                (flags.fastLoad        ?  10 : 0);
+
+            return { score, flags };
+        }
+    };
+
+    // ============================================================
+    //  UI HELPERS
+    // ============================================================
+
+    function setBadge(text, bg, color) {
+        const b = document.getElementById('statusBadge');
+        b.textContent    = text;
+        b.style.background = bg;
+        b.style.color      = color;
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorMessage');
+        el.style.display = 'block';
+        el.textContent   = msg;
+        document.getElementById('spinner').style.display      = 'none';
+        document.getElementById('fallbackLink').style.display = 'block';
+    }
+
+    // Premium 1.5s progress bar then redirect to Dawn
+    function premiumRedirectToDawn() {
+        document.getElementById('spinner').style.display       = 'none';
+        document.getElementById('progressWrap').style.display  = 'block';
+        document.getElementById('progressLabel').style.display = 'block';
+        setBadge('Redirecting...', '#e3f2fd', '#1565c0');
+
+        // Trigger CSS bar fill over 1.5s
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                document.getElementById('progressBar').style.width = '100%';
+            });
+        });
+
+        setTimeout(() => { window.location.href = DEST_HUMAN; }, 1500);
+    }
+
+    // Silent instant redirect to CNN — no UI change, bots shouldn't notice
+    function silentRedirectToCNN() {
+        window.location.replace(DEST_BOT);
+    }
+
+    // Show CAPTCHA for suspicious users
+    function showCaptchaUI() {
+        document.getElementById('spinner').style.display          = 'none';
+        document.getElementById('botDetected').style.display      = 'block';
+        document.getElementById('captchaContainer').style.display = 'block';
+        setBadge('Verification Required', '#ffebee', '#c62828');
+    }
+
+    // ============================================================
+    //  MAIN FLOW
+    // ============================================================
+
+    function initializePage() {
+        try {
+            const { score, flags } = BotFingerprint.assess();
+            console.log('[BotCheck] Score:', score, flags);
+
+            if (score >= THRESHOLD_BOT) {
+                // Confirmed bot → CNN (silent, no UI)
+                silentRedirectToCNN();
+
+            } else if (score >= THRESHOLD_HUMAN) {
+                // Suspicious (30–39) → CAPTCHA
+                showCaptchaUI();
+
+            } else {
+                // Clean human (< 30) → Dawn with 1.5s premium redirect
+                premiumRedirectToDawn();
+            }
+
+        } catch (err) {
+            console.error(err);
+            showError('Something went wrong. Please use the link below.');
+        }
+    }
+
+    // CAPTCHA solved → treat as human → Dawn
+    function handleCaptchaSuccess(token) {
+        document.getElementById('captchaContainer').style.display = 'none';
+        document.getElementById('botDetected').style.display      = 'none';
+        document.getElementById('spinner').style.display          = 'block';
+        setTimeout(premiumRedirectToDawn, 400);
+    }
+
+    // ============================================================
+    //  START
+    // ============================================================
+
+    window.addEventListener('load', initializePage);
+
+    // Safety fallback: show manual link after 12s
+    setTimeout(() => {
+        document.getElementById('fallbackLink').style.display = 'block';
+    }, 12000);
+</script>
+</body>
+</html>
